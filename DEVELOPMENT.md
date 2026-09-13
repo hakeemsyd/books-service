@@ -262,6 +262,56 @@ npm run dev
 3. Check backend logs for signature errors
 4. Verify Slack bot permissions
 
+## Docker & Deployment
+
+### Build & Run with Docker
+
+```bash
+# Backend
+cd backend
+docker build -t books-api .
+docker run -p 8000:8000 \
+  -e AIRTABLE_TOKEN=your_token \
+  -e AIRTABLE_BASE_ID=your_base_id \
+  -e SLACK_BOT_TOKEN=your_bot_token \
+  -e SLACK_SIGNING_SECRET=your_secret \
+  books-api
+
+# Frontend
+cd frontend
+docker build -t books-web .
+docker run -p 3000:3000 \
+  -e REACT_APP_API_URL=http://localhost:8000 \
+  books-web
+```
+
+### Deploy Backend to Railway
+
+Currently only the backend is deployed. Slack commands trigger the `/slack/run-books` endpoint.
+
+See [RAILWAY_DEPLOYMENT.md](../RAILWAY_DEPLOYMENT.md) for full instructions.
+
+Quick start:
+```bash
+# Option 1: Railway Dashboard (easiest)
+# - Go to railway.app
+# - Connect GitHub repo
+# - Add environment variables
+# - Deploy
+
+# Option 2: Railway CLI
+npm install -g @railway/cli
+cd backend
+railway init
+railway variables set AIRTABLE_TOKEN=...
+railway variables set AIRTABLE_BASE_ID=...
+railway variables set SLACK_BOT_TOKEN=...
+railway variables set SLACK_SIGNING_SECRET=...
+railway up
+```
+
+Update your Slack slash command Request URL to the deployed backend URL.
+
 ## Resources
 
 - FastAPI: https://fastapi.tiangolo.com
@@ -269,5 +319,7 @@ npm run dev
 - Vite: https://vitejs.dev
 - Airtable API: https://airtable.com/api
 - Slack API: https://api.slack.com
+- Railway: https://railway.app
 
 See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for architecture details.
+See [RAILWAY_DEPLOYMENT.md](RAILWAY_DEPLOYMENT.md) for deployment guide.

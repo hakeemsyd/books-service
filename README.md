@@ -153,24 +153,47 @@ All settings are environment-driven. See `backend/.env.example` and `frontend/.e
 
 ## Deployment
 
-### Backend (Render.com)
+Currently deploying **backend only** to handle Slack `/run-books` commands. The frontend is prepared for future use.
 
-1. Push to GitHub
-2. Connect repo to Render → detects `backend/render.yaml`
-3. Add environment variables in Render dashboard
-4. Deploy → update Slack slash command Request URL
+### Railway.app (Recommended)
 
-Note: Render free tier may take 30-50s to wake up on first request after idle.
+Railway is the easiest way to deploy the backend:
 
-### Frontend (Static Hosting)
+1. Go to https://railway.app
+2. Create account and connect GitHub
+3. Add new project, select this repository
+4. Railway auto-detects the backend Dockerfile
+5. Add environment variables (Airtable, Slack credentials)
+6. Deploy - backend redeploys automatically on every push to `main`
+7. Update your Slack slash command Request URL to the Railway URL
+
+See [RAILWAY_DEPLOYMENT.md](./RAILWAY_DEPLOYMENT.md) for detailed instructions.
+
+**Cost:** Free tier includes $5/month credits  
+**URL:** Backend gets automatic `.railway.app` domain with SSL  
+**Response time:** 2-5 minutes per deployment
+
+### Alternative: Self-Hosted Backend
 
 ```bash
-cd frontend
-npm run build
-# Deploy frontend/dist/ to Netlify, Vercel, S3, etc.
+# Build Docker image
+cd backend
+docker build -t books-api .
+
+# Run locally
+docker run -p 8000:8000 \
+  -e AIRTABLE_TOKEN=your_token \
+  -e AIRTABLE_BASE_ID=your_base_id \
+  -e SLACK_BOT_TOKEN=your_bot_token \
+  -e SLACK_SIGNING_SECRET=your_secret \
+  books-api
 ```
 
-Update `REACT_APP_API_URL` in frontend environment for production API endpoint.
+Deploy to any Docker host (AWS, Digital Ocean, Heroku, etc.)
+
+### Frontend (Future)
+
+The frontend is built and ready for deployment whenever needed. It communicates with the backend API and displays categorization results. Not currently deployed.
 
 ## Architecture
 
