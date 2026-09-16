@@ -33,30 +33,33 @@ on conflict (customer_id, lower(name)) do nothing;
 -- ---------------------------------------------------------------------------
 -- 3. Categories — a standard small-business/consulting chart of accounts,
 --    scoped to this customer. Add, remove, or rename rows to match what you
---    actually use.
+--    actually use. Every category needs an accounting_type — see the enum
+--    definition in schema.sql (income, cogs, expense, asset, liability,
+--    equity) — used for P&L/balance-sheet reporting, not for matching.
 -- ---------------------------------------------------------------------------
-insert into categories (customer_id, name)
-select c.id, cat.name
+insert into categories (customer_id, name, accounting_type)
+select c.id, cat.name, cat.accounting_type
 from customers c
 cross join (values
-    ('Advertising & Marketing'),
-    ('Bank Fees'),
-    ('Contractors & Vendors'),
-    ('Dues & Subscriptions'),
-    ('Gas & Fuel'),
-    ('Groceries'),
-    ('Insurance'),
-    ('Meals & Entertainment'),
-    ('Office Supplies'),
-    ('Parking & Tolls'),
-    ('Payroll'),
-    ('Professional Services'),
-    ('Rent'),
-    ('Software & Subscriptions'),
-    ('Travel'),
-    ('Utilities'),
-    ('Other')
-) as cat(name)
+    ('Client Income',            'income'::accounting_type),
+    ('Advertising & Marketing',  'expense'::accounting_type),
+    ('Bank Fees',                'expense'::accounting_type),
+    ('Contractors & Vendors',    'cogs'::accounting_type),
+    ('Dues & Subscriptions',     'expense'::accounting_type),
+    ('Gas & Fuel',               'expense'::accounting_type),
+    ('Groceries',                'expense'::accounting_type),
+    ('Insurance',                'expense'::accounting_type),
+    ('Meals & Entertainment',    'expense'::accounting_type),
+    ('Office Supplies',          'expense'::accounting_type),
+    ('Parking & Tolls',          'expense'::accounting_type),
+    ('Payroll',                  'expense'::accounting_type),
+    ('Professional Services',    'expense'::accounting_type),
+    ('Rent',                     'expense'::accounting_type),
+    ('Software & Subscriptions', 'expense'::accounting_type),
+    ('Travel',                   'expense'::accounting_type),
+    ('Utilities',                'expense'::accounting_type),
+    ('Other',                    'expense'::accounting_type)
+) as cat(name, accounting_type)
 where c.name = 'Coding Crafts'
 on conflict (customer_id, lower(name)) do nothing;
 

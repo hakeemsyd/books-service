@@ -52,7 +52,22 @@ categories (scoped to the customer, shared across its businesses via category_bu
 - **A Slack workspace maps to one customer** via `customers.slack_team_id`. When a `/run-books` command comes in, the backend looks up the customer by the Slack `team_id` in the request, then runs the entire categorization job scoped to that customer only.
 - A guard trigger (`check_category_business_same_customer`) rejects any attempt to link a category and business that belong to different customers — this is enforced at the database level, not just in application code.
 
-## 4. Seed Your Data
+## 4. Accounting Type
+
+Every category has an `accounting_type` — a Postgres enum with the standard chart-of-accounts classifications:
+
+| Value | Meaning |
+|---|---|
+| `income` | Revenue / money coming in |
+| `cogs` | Cost of goods sold — direct cost of delivering your product/service |
+| `expense` | General operating expense |
+| `asset` | Balance-sheet asset |
+| `liability` | Balance-sheet liability |
+| `equity` | Owner's equity |
+
+This is independent of the categorizer's matching logic (tier-1/tier-2 don't look at it) — it exists so P&L and balance-sheet reporting can group transactions correctly regardless of how a category happens to be named. Every row in `seed.sql` sets this explicitly; the column defaults to `'expense'` only as a safety net for rows inserted without it.
+
+## 5. Seed Your Data
 
 **Edit `seed.sql` first** — the customer, business name, and category list are a starting template. Update it to match what you actually use, then:
 
@@ -96,7 +111,7 @@ select id, 'New Client Inc' from customers where name = 'New Client Inc';
 -- ...categories + category_businesses for the new customer, same pattern as seed.sql
 ```
 
-## 5. Get Your Connection String
+## 6. Get Your Connection String
 
 1. Project Settings → Database → Connection string → **URI**
 2. Use the **Session pooler** string for serverless/Railway deployments (handles connection limits better than a direct connection)

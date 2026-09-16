@@ -50,6 +50,27 @@ create index if not exists idx_accounts_business on accounts(business_id);
 create unique index if not exists idx_accounts_business_name on accounts (business_id, lower(name));
 
 -- ---------------------------------------------------------------------------
+-- accounting_type: the standard chart-of-accounts classification. Every
+-- category is tagged with one so P&L/balance-sheet reporting can group
+-- transactions correctly, independent of how a category happens to be named.
+-- `create type` has no `if not exists`, so guard it with a DO block instead.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+    if not exists (select 1 from pg_type where typname = 'accounting_type') then
+        create type accounting_type as enum (
+            'income',
+            'cogs',       -- cost of goods sold
+            'expense',
+            'asset',
+            'liability',
+            'equity'
+        );
+    end if;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
 -- categories: bookkeeping categories, scoped to a customer (not shared across
 -- tenants). A category can still be shared across that customer's own
 -- businesses via category_businesses.
@@ -58,10 +79,15 @@ create table if not exists categories (
     id uuid primary key default gen_random_uuid(),
     customer_id uuid not null references customers(id) on delete cascade,
     name text not null,
+    accounting_type accounting_type not null default 'expense',
     created_at timestamptz not null default now()
 );
 
+alter table categories
+    add column if not exists accounting_type accounting_type not null default 'expense';
+
 create index if not exists idx_categories_customer on categories(customer_id);
+create index if not exists idx_categories_accounting_type on categories(accounting_type);
 create unique index if not exists idx_categories_customer_name on categories (customer_id, lower(name));
 
 create table if not exists category_businesses (
