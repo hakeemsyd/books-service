@@ -30,24 +30,17 @@ cp .env.example .env
 Edit `backend/.env` with your real values:
 
 ```env
-# Airtable
-AIRTABLE_TOKEN=patXXXXXXXXXXXXXX
-AIRTABLE_BASE_ID=applltiCCLasqIPr7
-AIRTABLE_TABLE_NAME=Transactions
-AIRTABLE_CATEGORIES_TABLE=Categories
+# Database (Supabase Postgres)
+DATABASE_URL=postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres
 
 # Slack
 SLACK_BOT_TOKEN=xoxb-XXXXXXXXXXXX
 SLACK_SIGNING_SECRET=XXXXXXXXXXXXXXXXXXXXXXXX
 SLACK_CHANNEL_ID=C0C2AEDFSGY
-
-# Optional
-EXCLUDED_ACCOUNT_IDS=recSZCA8muq03PkB6,recFOW4pJVUrZpfp2
 ```
 
 **Where to get these:**
-- **AIRTABLE_TOKEN**: https://airtable.com/create/tokens
-- **AIRTABLE_BASE_ID**: In your Airtable base URL: `https://airtable.com/base/[BASE_ID]/...`
+- **DATABASE_URL**: Supabase dashboard → Project Settings → Database → Connection string → URI (see `backend/supabase/README.md` for full setup, including schema + seed)
 - **SLACK_BOT_TOKEN**: Slack app settings → OAuth & Permissions
 - **SLACK_SIGNING_SECRET**: Slack app settings → Basic Information
 
@@ -125,7 +118,7 @@ Test that all modules import correctly:
 ```bash
 python -c "from src.main import app; print('✅ App imported successfully')"
 python -c "from src.services import categorize_batch; print('✅ Services imported successfully')"
-python -c "from src.clients import list_all_records; print('✅ Clients imported successfully')"
+python -c "from src.clients import fetch_categories; print('✅ Clients imported successfully')"
 ```
 
 ## Troubleshooting
@@ -140,10 +133,14 @@ python --version
 pip install -r requirements.txt
 ```
 
-### "KeyError: 'AIRTABLE_TOKEN'"
+### "KeyError: 'DATABASE_URL'"
 - Create `.env` file in `backend/` directory
 - Add all required environment variables
 - Restart the server
+
+### "connection refused" / asyncpg can't reach Postgres
+- Double-check `DATABASE_URL` — use the Session pooler string from Supabase, not the direct connection, if you're behind a restrictive network
+- Confirm the schema has been applied (see `backend/supabase/README.md`)
 
 ### "Connection refused" when testing Slack
 - Make sure backend is running on port 8000
@@ -178,16 +175,14 @@ pytest -v
 
 | Variable | Purpose | Required |
 |----------|---------|----------|
-| AIRTABLE_TOKEN | API auth for Airtable | Yes |
-| AIRTABLE_BASE_ID | Which Airtable base to use | Yes |
-| AIRTABLE_TABLE_NAME | Transactions table name | No (default: Transactions) |
-| AIRTABLE_CATEGORIES_TABLE | Categories table name | No (default: Categories) |
+| DATABASE_URL | Supabase Postgres connection string | Yes |
 | SLACK_BOT_TOKEN | Slack bot authentication | Yes |
 | SLACK_SIGNING_SECRET | Verify Slack requests | Yes |
 | SLACK_CHANNEL_ID | Default channel (fallback) | No |
-| EXCLUDED_ACCOUNT_IDS | Account IDs to skip | No |
 | MIN_SEEN | Tier-1 min occurrences | No (default: 3) |
 | MIN_CONSISTENCY | Tier-1 min consistency | No (default: 0.9) |
+
+Account exclusions are no longer an env var — set `excluded = true` directly on the account row in the `accounts` table.
 
 ## Next Steps
 

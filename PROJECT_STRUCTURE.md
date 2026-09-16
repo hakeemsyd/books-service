@@ -73,7 +73,7 @@ books-service/
    - Pure functions when possible for testability
 
 3. **Clients Layer** (`clients/`)
-   - External API integrations (Airtable, Slack)
+   - External integrations: Supabase Postgres (`db_client.py`) and Slack (`slack_client.py`)
    - Encapsulates external dependencies
    - Reusable across services
 
@@ -230,11 +230,12 @@ import { useHook } from '../hooks/name'
 
 ### Backend (`backend/.env`)
 See `backend/.env.example`:
-- `AIRTABLE_TOKEN` - Airtable API token
-- `AIRTABLE_BASE_ID` - Airtable base ID
+- `DATABASE_URL` - Supabase Postgres connection string
 - `SLACK_BOT_TOKEN` - Slack bot token
 - `SLACK_SIGNING_SECRET` - Slack signing secret
-- Optional field mappings and thresholds
+- Optional matching thresholds (`MIN_SEEN`, `MIN_CONSISTENCY`)
+
+See `backend/supabase/README.md` for the database schema and setup.
 
 ### Frontend (`frontend/.env`)
 - `REACT_APP_API_URL` - Backend API URL (defaults to `/api`)

@@ -223,8 +223,8 @@ If adding database support:
 
 ### Backend
 - Use async/await for all I/O
-- Cache Airtable responses when possible
-- Batch API calls (Airtable supports 10/request)
+- The asyncpg connection pool is created once at startup (see `src/main.py` lifespan) — don't open new connections per-request
+- Batch writes with `executemany` (already used in `update_transactions`)
 - Monitor with `/metrics` endpoint (add prometheus later)
 
 ### Frontend
@@ -271,8 +271,7 @@ npm run dev
 cd backend
 docker build -t books-api .
 docker run -p 8000:8000 \
-  -e AIRTABLE_TOKEN=your_token \
-  -e AIRTABLE_BASE_ID=your_base_id \
+  -e DATABASE_URL=your_supabase_connection_string \
   -e SLACK_BOT_TOKEN=your_bot_token \
   -e SLACK_SIGNING_SECRET=your_secret \
   books-api
@@ -303,8 +302,7 @@ Quick start:
 npm install -g @railway/cli
 cd backend
 railway init
-railway variables set AIRTABLE_TOKEN=...
-railway variables set AIRTABLE_BASE_ID=...
+railway variables set DATABASE_URL=...
 railway variables set SLACK_BOT_TOKEN=...
 railway variables set SLACK_SIGNING_SECRET=...
 railway up
@@ -317,7 +315,8 @@ Update your Slack slash command Request URL to the deployed backend URL.
 - FastAPI: https://fastapi.tiangolo.com
 - React: https://react.dev
 - Vite: https://vitejs.dev
-- Airtable API: https://airtable.com/api
+- Supabase: https://supabase.com/docs
+- asyncpg: https://magicstack.github.io/asyncpg/
 - Slack API: https://api.slack.com
 - Railway: https://railway.app
 

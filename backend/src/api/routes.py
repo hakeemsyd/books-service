@@ -4,13 +4,12 @@ from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Request, BackgroundTasks, Response
 
-from ..clients import verify_slack_signature, post_message, post_to_response_url
-from ..services import build_history_index, categorize_batch, normalize_name
-from ..clients import list_all_records, update_records
-from ..config import (
-    AIRTABLE_TABLE_NAME, AIRTABLE_CATEGORIES_TABLE,
-    FIELD_CATEGORY, FIELD_NAME, FIELD_ACCOUNT, FIELD_USD, FIELD_DATE, FIELD_BUSINESSES, FIELD_REVIEWED
+from ..clients import (
+    verify_slack_signature, post_message, post_to_response_url,
+    fetch_categories, fetch_historical_transactions, fetch_uncategorized_transactions,
+    update_transactions,
 )
+from ..services import build_history_index, categorize_batch
 
 log = logging.getLogger("books-service")
 router = APIRouter()
@@ -39,66 +38,32 @@ async def run_books_command(request: Request, background_tasks: BackgroundTasks)
     return {"response_type": "ephemeral", "text": "⏳ Running books categorization now — I'll post results here shortly."}
 
 
-async def _fetch_categories():
-    """Fetch categories from Airtable.
-
-    Returns (categories_by_business: {business_name: {name_lower: id}}, category_id_to_name: {id: name}).
-    """
-    records = await list_all_records(AIRTABLE_CATEGORIES_TABLE)
-    categories_by_business: dict[str, dict[str, str]] = {}
-    category_id_to_name: dict[str, str] = {}
-    for rec in records:
-        f = rec.get("fields", {})
-        name = f.get("Name") or f.get("*Name") or ""
-        category_id_to_name[rec["id"]] = name
-        businesses = f.get(FIELD_BUSINESSES) or f.get("Businesses") or []
-        for b in businesses:
-            categories_by_business.setdefault(b, {})[name.lower()] = rec["id"]
-    return categories_by_business, category_id_to_name
-
-
 async def run_job(response_url: str | None, channel_id: str | None):
     """Main job to categorize uncategorized transactions."""
     try:
         log.info("Fetching category schema...")
-        categories_by_business, category_id_to_name = await _fetch_categories()
+        categories_by_business, category_id_to_name = await fetch_categories()
 
         log.info("Fetching historical categorized transactions...")
-        historical = await list_all_records(
-            AIRTABLE_TABLE_NAME,
-            formula=f"NOT({{{FIELD_CATEGORY}}} = '')",
-            fields=[FIELD_NAME, FIELD_ACCOUNT, FIELD_CATEGORY, FIELD_BUSINESSES],
-            max_pages=50,
-            page_size=100,
-        )
-        account_name_index, name_only_index, account_business_votes = build_history_index(historical)
+        historical = await fetch_historical_transactions()
+        account_name_index, name_only_index = build_history_index(historical)
 
         log.info("Fetching uncategorized transactions...")
-        uncategorized = await list_all_records(
-            AIRTABLE_TABLE_NAME,
-            formula=f"{{{FIELD_CATEGORY}}} = ''",
-            fields=[FIELD_NAME, FIELD_ACCOUNT, FIELD_USD, FIELD_DATE, FIELD_CATEGORY],
-        )
+        uncategorized = await fetch_uncategorized_transactions()
 
         auto, suggested, needs_review = categorize_batch(
             uncategorized, account_name_index, name_only_index,
-            account_business_votes, category_id_to_name, categories_by_business,
+            category_id_to_name, categories_by_business,
         )
 
         updates = []
         for item in auto:
-            updates.append({"id": item["id"], "fields": {
-                FIELD_CATEGORY: [item["category_id"]],
-                FIELD_REVIEWED: True,
-            }})
+            updates.append({"id": item["id"], "category_id": item["category_id"], "reviewed": True})
         for item in suggested:
-            updates.append({"id": item["id"], "fields": {
-                FIELD_CATEGORY: [item["category_id"]],
-                FIELD_REVIEWED: False,
-            }})
+            updates.append({"id": item["id"], "category_id": item["category_id"], "reviewed": False})
 
         if updates:
-            await update_records(AIRTABLE_TABLE_NAME, updates)
+            await update_transactions(updates)
 
         text = _format_summary(auto, suggested, needs_review)
 
@@ -141,6 +106,6 @@ def _format_summary(auto, suggested, needs_review) -> str:
         return "✅ No new uncategorized transactions right now — books are up to date."
     parts = [f"*Manual run — books categorization*  ({total} transactions processed)"]
     parts.append(f"\n✅ *Auto-categorized* ({len(auto)})\n{_fmt_list(auto)}")
-    parts.append(f"\n🟡 *Suggested — please confirm in Airtable* ({len(suggested)})\n{_fmt_list(suggested)}")
+    parts.append(f"\n🟡 *Suggested — please confirm in the database* ({len(suggested)})\n{_fmt_list(suggested)}")
     parts.append(f"\n🔴 *Needs manual categorization* ({len(needs_review)})\n{_fmt_list(needs_review)}")
     return "\n".join(parts)

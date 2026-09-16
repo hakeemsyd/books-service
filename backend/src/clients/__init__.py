@@ -1,10 +1,17 @@
 """External service clients."""
-from .airtable_client import list_all_records, update_records
+from .db_client import (
+    fetch_categories,
+    fetch_historical_transactions,
+    fetch_uncategorized_transactions,
+    update_transactions,
+)
 from .slack_client import verify_slack_signature, post_message, post_to_response_url
 
 __all__ = [
-    "list_all_records",
-    "update_records",
+    "fetch_categories",
+    "fetch_historical_transactions",
+    "fetch_uncategorized_transactions",
+    "update_transactions",
     "verify_slack_signature",
     "post_message",
     "post_to_response_url",

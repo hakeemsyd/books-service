@@ -4,11 +4,9 @@ services:
     env: python
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn src.main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: AIRTABLE_TOKEN
-        sync: false
-      - key: AIRTABLE_BASE_ID
+      - key: DATABASE_URL
         sync: false
       - key: SLACK_BOT_TOKEN
         sync: false

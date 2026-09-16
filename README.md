@@ -1,10 +1,10 @@
 # Books Categorization Service
 
-A **monorepo** containing a FastAPI backend and React frontend for managing book categorization with Airtable and Slack integration.
+A **monorepo** containing a FastAPI backend and React frontend for managing book categorization with a Supabase (Postgres) database and Slack integration.
 
 ## Overview
 
-The Books Service lets you trigger automatic transaction categorization directly from Slack using the `/run-books` command. It analyzes your Airtable "Book Keeping" base and categorizes uncategorized transactions using:
+The Books Service lets you trigger automatic transaction categorization directly from Slack using the `/run-books` command. It reads transactions from a Supabase Postgres database and categorizes uncategorized ones using:
 
 1. **Tier 1 (Statistical)**: Matches against historical data — auto-categorizes if seen ≥ 3 times at exact account+merchant with ≥ 90% consistency
 2. **Tier 2 (Keyword Rules)**: Pattern matching against category names — suggests categories with lower confidence for your review
@@ -17,7 +17,7 @@ The service includes both:
 
 ```
 books-service/
-├── backend/          # FastAPI API
+├── backend/          # FastAPI API + Supabase schema
 ├── frontend/         # React dashboard
 └── PROJECT_STRUCTURE.md  # Detailed architecture docs
 ```
@@ -26,9 +26,9 @@ See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for complete directory layout a
 
 ## What It Does NOT Do
 
-- Never pulls/syncs transactions from banks — your existing sync (Plaid, Fintable) continues as normal
+- Never pulls/syncs transactions from banks — that's a separate sync process (Plaid, Fintable, CSV import, etc.) that writes into the `transactions` table
 - Never modifies already-categorized transactions
-- Never touches excluded accounts — configure in `backend/.env`
+- Never touches excluded accounts — set `accounts.excluded = true` for those accounts
 
 ## Quick Start
 
@@ -36,6 +36,7 @@ See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for complete directory layout a
 
 - Python 3.9+ (backend)
 - Node.js 16+ (frontend)
+- A Supabase project (free tier is fine)
 - Git
 
 ### 1. Clone and Setup
@@ -56,27 +57,16 @@ npm install
 cp .env.example .env
 ```
 
-### 2. Get Your Credentials
+### 2. Set Up the Database
 
-**Airtable Personal Access Token** (airtable.com/create/tokens):
-- Scopes: `data.records:read`, `data.records:write`, `schema.bases:read`
-- Access: your "Book Keeping" base
+See [backend/supabase/README.md](./backend/supabase/README.md) for full instructions. Short version:
 
-**Slack app** (api.slack.com/apps → Create New App → From scratch):
-1. **OAuth & Permissions** → Bot Token Scopes: add `commands`, `chat:write`.
-   Install to workspace → copy the `xoxb-...` **Bot User OAuth Token**.
-2. **Basic Information** → copy the **Signing Secret**.
-3. **Slash Commands** → Create New Command:
-   - Command: `/run-books`
-   - Request URL: `https://<your-render-service>.onrender.com/slack/run-books`
-   - Short description: "Run books categorization now"
-4. Invite the bot to `#airtable-finances`: `/invite @YourAppName`.
+1. Create a project at https://supabase.com/dashboard
+2. Run `backend/supabase/schema.sql` in the Supabase SQL Editor
+3. Edit and run `backend/supabase/seed.sql` with your real business/category names
+4. Copy the connection string (Project Settings → Database → Connection string → URI) into `backend/.env` as `DATABASE_URL`
 
-### 3. Backend Credentials
-
-**Airtable Personal Access Token** (airtable.com/create/tokens):
-- Scopes: `data.records:read`, `data.records:write`, `schema.bases:read`
-- Access: your "Book Keeping" base
+### 3. Get Slack Credentials
 
 **Slack App** (api.slack.com/apps → Create New App):
 1. **OAuth & Permissions** → Bot Token Scopes: add `commands`, `chat:write`
@@ -124,8 +114,8 @@ In any Slack channel, type `/run-books` to trigger categorization.
 Expected flow:
 1. Immediate ephemeral ack: "⏳ Running books categorization now..."
 2. Few seconds to 2+ minutes later (depending on transaction volume):
-   - ✅ Auto-categorized (high confidence, Reviewed = true)
-   - 🟡 Suggested — review in Airtable (Reviewed = false)
+   - ✅ Auto-categorized (high confidence, `reviewed = true`)
+   - 🟡 Suggested — review in the database (`reviewed = false`)
    - 🔴 Needs manual categorization (left untouched)
 
 ### Frontend Dashboard
@@ -140,13 +130,11 @@ Visit http://localhost:3000 (development) to view the dashboard. Features to com
 All settings are environment-driven. See `backend/.env.example` and `frontend/.env.example`.
 
 **Backend** (`backend/.env`):
-- `AIRTABLE_TOKEN` — API token
-- `AIRTABLE_BASE_ID` — Base ID
+- `DATABASE_URL` — Supabase Postgres connection string
 - `SLACK_BOT_TOKEN` — Bot token
 - `SLACK_SIGNING_SECRET` — Signing secret
 - `MIN_SEEN` — Tier-1 minimum occurrences (default: 3)
 - `MIN_CONSISTENCY` — Tier-1 consistency threshold (default: 0.9)
-- Optional: field name overrides, excluded account IDs
 
 **Frontend** (`frontend/.env`):
 - `REACT_APP_API_URL` — Backend API endpoint (default: `/api`)
@@ -163,7 +151,7 @@ Railway is the easiest way to deploy the backend:
 2. Create account and connect GitHub
 3. Add new project, select this repository
 4. Railway auto-detects the backend Dockerfile
-5. Add environment variables (Airtable, Slack credentials)
+5. Add environment variables (`DATABASE_URL`, Slack credentials)
 6. Deploy - backend redeploys automatically on every push to `main`
 7. Update your Slack slash command Request URL to the Railway URL
 
@@ -182,8 +170,7 @@ docker build -t books-api .
 
 # Run locally
 docker run -p 8000:8000 \
-  -e AIRTABLE_TOKEN=your_token \
-  -e AIRTABLE_BASE_ID=your_base_id \
+  -e DATABASE_URL=your_supabase_connection_string \
   -e SLACK_BOT_TOKEN=your_bot_token \
   -e SLACK_SIGNING_SECRET=your_secret \
   books-api
@@ -208,7 +195,7 @@ See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for:
 
 - **Tier-1 thresholds**: Adjust `MIN_SEEN` and `MIN_CONSISTENCY` in `backend/.env`
 - **Tier-2 rules**: Edit `SEMANTIC_RULES` in `backend/src/services/categorizer.py`
-- **Excluded accounts**: Set `EXCLUDED_ACCOUNT_IDS` in `backend/.env`
-- **Field names**: Override defaults in `backend/.env` if your Airtable structure differs
+- **Excluded accounts**: Set `excluded = true` on the account row in the `accounts` table
+- **Categories per business**: Managed via the `category_businesses` junction table — see `backend/supabase/README.md`
 
 This service runs independently of any scheduled tasks — it's purely on-demand via `/run-books`.

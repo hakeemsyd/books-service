@@ -30,11 +30,9 @@ Currently deploying **backend only**. The frontend is prepared for future use bu
 3. Select `hakeemsyd/books-service`
 4. Railway will detect the Dockerfile automatically
 5. Add environment variables:
-   - `AIRTABLE_TOKEN=your_token`
-   - `AIRTABLE_BASE_ID=your_base_id`
+   - `DATABASE_URL=your_supabase_connection_string`
    - `SLACK_BOT_TOKEN=your_bot_token`
    - `SLACK_SIGNING_SECRET=your_signing_secret`
-   - `EXCLUDED_ACCOUNT_IDS=rec123,rec456`
 6. Click **Deploy**
 
 #### Option B: Using Railway CLI
@@ -51,8 +49,7 @@ cd backend
 railway init
 
 # Add environment variables
-railway variables set AIRTABLE_TOKEN=your_token
-railway variables set AIRTABLE_BASE_ID=your_base_id
+railway variables set DATABASE_URL=your_supabase_connection_string
 railway variables set SLACK_BOT_TOKEN=your_bot_token
 railway variables set SLACK_SIGNING_SECRET=your_signing_secret
 
@@ -88,11 +85,8 @@ When ready to deploy the frontend:
 Add these in Railway dashboard or via CLI:
 
 ```env
-# Airtable
-AIRTABLE_TOKEN=pat...
-AIRTABLE_BASE_ID=app...
-AIRTABLE_TABLE_NAME=Transactions
-AIRTABLE_CATEGORIES_TABLE=Categories
+# Database (Supabase Postgres)
+DATABASE_URL=postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres
 
 # Slack
 SLACK_BOT_TOKEN=xoxb-...
@@ -100,7 +94,6 @@ SLACK_SIGNING_SECRET=...
 SLACK_CHANNEL_ID=C...
 
 # Optional
-EXCLUDED_ACCOUNT_IDS=rec123,rec456
 MIN_SEEN=3
 MIN_CONSISTENCY=0.9
 MAX_HISTORY_PAGES=50
