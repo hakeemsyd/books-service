@@ -80,7 +80,24 @@ Open your browser:
 - **Interactive Docs**: http://localhost:8000/docs
 - **Alternative Docs**: http://localhost:8000/redoc
 
-### 6. Test Slack Integration Locally
+### 6. Run Without Slack (CLI)
+
+Slack isn't required to use this service. Run a categorization pass directly from the command line — useful for local testing or if you haven't set up a Slack app yet:
+
+```bash
+# List customers (seeded via backend/supabase/seed.sql)
+python -m scripts.run_books --list-customers
+
+# Preview categorization without writing to the database
+python -m scripts.run_books --customer "Hakeem Abbas" --dry-run
+
+# Actually run it (writes category_id/reviewed back to transactions)
+python -m scripts.run_books --customer "Hakeem Abbas"
+```
+
+`backend/.env` is loaded automatically (via `python-dotenv`) — no need to `export` variables manually.
+
+### 6b. Test Slack Integration Locally (optional)
 
 #### Option A: Using ngrok (for Slack Request URL)
 

@@ -4,13 +4,8 @@ from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Request, BackgroundTasks, Response
 
-from ..clients import (
-    verify_slack_signature, post_message, post_to_response_url,
-    fetch_customer_by_slack_team, fetch_categories,
-    fetch_historical_transactions, fetch_uncategorized_transactions,
-    update_transactions,
-)
-from ..services import build_history_index, categorize_batch
+from ..clients import verify_slack_signature, post_message, post_to_response_url, fetch_customer_by_slack_team
+from ..services import run_categorization, format_summary
 
 log = logging.getLogger("books-service")
 router = APIRouter()
@@ -49,33 +44,10 @@ async def run_books_command(request: Request, background_tasks: BackgroundTasks)
 
 
 async def run_job(customer_id: str, response_url: str | None, channel_id: str | None):
-    """Main job to categorize uncategorized transactions for a single customer."""
+    """Runs the categorization job for a customer and posts the result to Slack."""
     try:
-        log.info("Fetching category schema for customer=%s...", customer_id)
-        categories_by_business, category_id_to_name = await fetch_categories(customer_id)
-
-        log.info("Fetching historical categorized transactions...")
-        historical = await fetch_historical_transactions(customer_id)
-        account_name_index, name_only_index = build_history_index(historical)
-
-        log.info("Fetching uncategorized transactions...")
-        uncategorized = await fetch_uncategorized_transactions(customer_id)
-
-        auto, suggested, needs_review = categorize_batch(
-            uncategorized, account_name_index, name_only_index,
-            category_id_to_name, categories_by_business,
-        )
-
-        updates = []
-        for item in auto:
-            updates.append({"id": item["id"], "category_id": item["category_id"], "reviewed": True})
-        for item in suggested:
-            updates.append({"id": item["id"], "category_id": item["category_id"], "reviewed": False})
-
-        if updates:
-            await update_transactions(customer_id, updates)
-
-        text = _format_summary(auto, suggested, needs_review)
+        auto, suggested, needs_review = await run_categorization(customer_id)
+        text = format_summary(auto, suggested, needs_review)
 
         if response_url:
             await post_to_response_url(response_url, text)
@@ -89,33 +61,3 @@ async def run_job(customer_id: str, response_url: str | None, channel_id: str | 
             await post_to_response_url(response_url, err_text)
         else:
             await post_message(err_text, channel=channel_id)
-
-
-def _fmt_amount(usd):
-    """Format USD amount."""
-    if usd is None:
-        return ""
-    return f"${usd:,.2f}"
-
-
-def _fmt_list(items, limit=15):
-    """Format items as a list with optional limit."""
-    lines = []
-    for item in items[:limit]:
-        cat = f" → {item.get('category_name')}" if item.get("category_name") else ""
-        lines.append(f"• {item['name']} ({_fmt_amount(item['usd'])}){cat}")
-    if len(items) > limit:
-        lines.append(f"…and {len(items) - limit} more")
-    return "\n".join(lines) if lines else "_none_"
-
-
-def _format_summary(auto, suggested, needs_review) -> str:
-    """Format categorization results as Slack message."""
-    total = len(auto) + len(suggested) + len(needs_review)
-    if total == 0:
-        return "✅ No new uncategorized transactions right now — books are up to date."
-    parts = [f"*Manual run — books categorization*  ({total} transactions processed)"]
-    parts.append(f"\n✅ *Auto-categorized* ({len(auto)})\n{_fmt_list(auto)}")
-    parts.append(f"\n🟡 *Suggested — please confirm in the database* ({len(suggested)})\n{_fmt_list(suggested)}")
-    parts.append(f"\n🔴 *Needs manual categorization* ({len(needs_review)})\n{_fmt_list(needs_review)}")
-    return "\n".join(parts)

@@ -49,7 +49,7 @@ categories (scoped to the customer, shared across its businesses via category_bu
 
 - **Categories belong to a customer, not globally.** Two different customers never share category rows, even if the names match — each gets its own.
 - **Every account belongs to exactly one business**, and every business belongs to exactly one customer. This chain (`account → business → customer`) is how every query scopes data to the right tenant.
-- **A Slack workspace maps to one customer** via `customers.slack_team_id`. When a `/run-books` command comes in, the backend looks up the customer by the Slack `team_id` in the request, then runs the entire categorization job scoped to that customer only.
+- **A Slack workspace maps to one customer** via `customers.slack_team_id`. When a `/run-books` command comes in, the backend looks up the customer by the Slack `team_id` in the request, then runs the entire categorization job scoped to that customer only. **Slack is optional** — `slack_team_id` can be left `null` and the customer run entirely via the CLI (`backend/scripts/run_books.py --customer "..."`) instead. Wire up Slack later by setting `slack_team_id` on the row whenever you're ready.
 - A guard trigger (`check_category_business_same_customer`) rejects any attempt to link a category and business that belong to different customers — this is enforced at the database level, not just in application code.
 
 ## 4. Accounting Type
@@ -75,16 +75,16 @@ This is independent of the categorizer's matching logic (tier-1/tier-2 don't loo
 2. Paste your edited `seed.sql`
 3. Click **Run**
 
-### Finding your Slack Team ID
+### Finding your Slack Team ID (only if/when you turn on Slack)
 
-`seed.sql` needs your workspace's Slack Team ID (looks like `T0123456`) to route `/run-books` commands to the right customer. Get it with:
+Route `/run-books` commands to the right customer by setting `slack_team_id` (looks like `T0123456`) on their row. Get it with:
 
 ```bash
 curl -X POST https://slack.com/api/auth.test \
   -H "Authorization: Bearer $SLACK_BOT_TOKEN"
 ```
 
-The response includes `"team_id": "T0123456"`.
+The response includes `"team_id": "T0123456"`. Until then, leave it `null` and use the CLI (`backend/scripts/run_books.py`) instead.
 
 ### Adding accounts
 
@@ -92,10 +92,10 @@ Add your real bank/credit accounts by uncommenting and editing the `insert into 
 
 ```sql
 insert into accounts (name, business_id, excluded)
-select 'Chase Checking 1234', b.id, false
+select 'Chase Business Checking', b.id, false
 from businesses b
 join customers c on c.id = b.customer_id
-where c.name = 'Coding Crafts' and b.name = 'Coding Crafts';
+where c.name = 'Hakeem Abbas' and b.name = 'Coding Crafts LLC';
 ```
 
 ### Onboarding another customer later

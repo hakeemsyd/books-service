@@ -30,6 +30,25 @@ async def fetch_customer_by_slack_team(slack_team_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+async def fetch_customer_by_name(name: str) -> dict | None:
+    """Look up a customer by name (case-insensitive) — used by the CLI runner."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "select id, name from customers where lower(name) = lower($1)",
+            name,
+        )
+    return dict(row) if row else None
+
+
+async def list_customers() -> list[dict]:
+    """All customers — used by the CLI runner's --list-customers."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("select id, name, slack_team_id from customers order by name")
+    return [dict(r) for r in rows]
+
+
 async def fetch_categories(customer_id: str):
     """
     Returns:
