@@ -6,7 +6,8 @@ from fastapi import APIRouter, Request, BackgroundTasks, Response
 
 from ..clients import (
     verify_slack_signature, post_message, post_to_response_url,
-    fetch_categories, fetch_historical_transactions, fetch_uncategorized_transactions,
+    fetch_customer_by_slack_team, fetch_categories,
+    fetch_historical_transactions, fetch_uncategorized_transactions,
     update_transactions,
 )
 from ..services import build_history_index, categorize_batch
@@ -31,25 +32,34 @@ async def run_books_command(request: Request, background_tasks: BackgroundTasks)
     form = parse_qs(body.decode("utf-8"))
     response_url = form.get("response_url", [None])[0]
     channel_id = form.get("channel_id", [None])[0]
+    team_id = form.get("team_id", [None])[0]
 
-    background_tasks.add_task(run_job, response_url, channel_id)
+    customer = await fetch_customer_by_slack_team(team_id) if team_id else None
+    if not customer:
+        log.warning("No customer configured for Slack team_id=%s", team_id)
+        return {
+            "response_type": "ephemeral",
+            "text": "⚠️ This Slack workspace isn't linked to a customer yet. Ask an admin to set it up.",
+        }
+
+    background_tasks.add_task(run_job, customer["id"], response_url, channel_id)
 
     # Slack requires an ack within 3 seconds
     return {"response_type": "ephemeral", "text": "⏳ Running books categorization now — I'll post results here shortly."}
 
 
-async def run_job(response_url: str | None, channel_id: str | None):
-    """Main job to categorize uncategorized transactions."""
+async def run_job(customer_id: str, response_url: str | None, channel_id: str | None):
+    """Main job to categorize uncategorized transactions for a single customer."""
     try:
-        log.info("Fetching category schema...")
-        categories_by_business, category_id_to_name = await fetch_categories()
+        log.info("Fetching category schema for customer=%s...", customer_id)
+        categories_by_business, category_id_to_name = await fetch_categories(customer_id)
 
         log.info("Fetching historical categorized transactions...")
-        historical = await fetch_historical_transactions()
+        historical = await fetch_historical_transactions(customer_id)
         account_name_index, name_only_index = build_history_index(historical)
 
         log.info("Fetching uncategorized transactions...")
-        uncategorized = await fetch_uncategorized_transactions()
+        uncategorized = await fetch_uncategorized_transactions(customer_id)
 
         auto, suggested, needs_review = categorize_batch(
             uncategorized, account_name_index, name_only_index,
@@ -63,7 +73,7 @@ async def run_job(response_url: str | None, channel_id: str | None):
             updates.append({"id": item["id"], "category_id": item["category_id"], "reviewed": False})
 
         if updates:
-            await update_transactions(updates)
+            await update_transactions(customer_id, updates)
 
         text = _format_summary(auto, suggested, needs_review)
 

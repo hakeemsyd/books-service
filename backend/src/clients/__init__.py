@@ -1,5 +1,6 @@
 """External service clients."""
 from .db_client import (
+    fetch_customer_by_slack_team,
     fetch_categories,
     fetch_historical_transactions,
     fetch_uncategorized_transactions,
@@ -8,6 +9,7 @@ from .db_client import (
 from .slack_client import verify_slack_signature, post_message, post_to_response_url
 
 __all__ = [
+    "fetch_customer_by_slack_team",
     "fetch_categories",
     "fetch_historical_transactions",
     "fetch_uncategorized_transactions",

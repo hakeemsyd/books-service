@@ -5,7 +5,7 @@ This directory holds the Postgres schema and seed data for the Books Service, de
 ## Files
 
 - `schema.sql` — table definitions, indexes, triggers, RLS. Idempotent (safe to re-run).
-- `seed.sql` — starter categories/business. **Edit this before running** — it's a template, not your real data.
+- `seed.sql` — starter customer/business/categories. **Edit this before running** — it's a template, not your real data.
 
 ## 1. Create a Supabase Project
 
@@ -25,29 +25,78 @@ This creates:
 
 | Table | Purpose |
 |---|---|
-| `businesses` | Each company/entity you track books for |
+| `customers` | Each tenant of this service — typically one Slack workspace |
+| `businesses` | Each company/entity a customer tracks books for |
 | `accounts` | Bank/credit accounts, each tied to one business |
-| `categories` | Bookkeeping categories (shared across businesses via the junction table) |
-| `category_businesses` | Which categories apply to which businesses |
+| `categories` | Bookkeeping categories, scoped to one customer |
+| `category_businesses` | Which categories apply to which businesses (within the same customer) |
 | `transactions` | The actual transactions to categorize |
 
-## 3. Seed Your Data
+## 3. Multi-Tenancy Model
 
-**Edit `seed.sql` first** — the business name and category list are a starting template based on common small-business categories. Update it to match what you actually use, then:
+This service supports **multiple customers, each with multiple businesses**:
+
+```
+customer (e.g. "Coding Crafts")
+├── business "Coding Crafts LLC"
+│   ├── account "Chase Business Checking"
+│   └── account "Chase Business Ink"
+└── business "Side Project Inc"
+    └── account "Mercury Checking"
+
+categories (scoped to the customer, shared across its businesses via category_businesses)
+```
+
+- **Categories belong to a customer, not globally.** Two different customers never share category rows, even if the names match — each gets its own.
+- **Every account belongs to exactly one business**, and every business belongs to exactly one customer. This chain (`account → business → customer`) is how every query scopes data to the right tenant.
+- **A Slack workspace maps to one customer** via `customers.slack_team_id`. When a `/run-books` command comes in, the backend looks up the customer by the Slack `team_id` in the request, then runs the entire categorization job scoped to that customer only.
+- A guard trigger (`check_category_business_same_customer`) rejects any attempt to link a category and business that belong to different customers — this is enforced at the database level, not just in application code.
+
+## 4. Seed Your Data
+
+**Edit `seed.sql` first** — the customer, business name, and category list are a starting template. Update it to match what you actually use, then:
 
 1. SQL Editor → New query
 2. Paste your edited `seed.sql`
 3. Click **Run**
 
-Add your real accounts by uncommenting and editing the `insert into accounts` block at the bottom, or insert them directly:
+### Finding your Slack Team ID
+
+`seed.sql` needs your workspace's Slack Team ID (looks like `T0123456`) to route `/run-books` commands to the right customer. Get it with:
+
+```bash
+curl -X POST https://slack.com/api/auth.test \
+  -H "Authorization: Bearer $SLACK_BOT_TOKEN"
+```
+
+The response includes `"team_id": "T0123456"`.
+
+### Adding accounts
+
+Add your real bank/credit accounts by uncommenting and editing the `insert into accounts` block at the bottom of `seed.sql`, or insert them directly:
 
 ```sql
 insert into accounts (name, business_id, excluded)
 select 'Chase Checking 1234', b.id, false
-from businesses b where b.name = 'Your Business Name';
+from businesses b
+join customers c on c.id = b.customer_id
+where c.name = 'Coding Crafts' and b.name = 'Coding Crafts';
 ```
 
-## 4. Get Your Connection String
+### Onboarding another customer later
+
+Copy the pattern in `seed.sql` with a new customer name and Slack Team ID, then its own businesses and categories:
+
+```sql
+insert into customers (name, slack_team_id) values ('New Client Inc', 'T9999999');
+
+insert into businesses (customer_id, name)
+select id, 'New Client Inc' from customers where name = 'New Client Inc';
+
+-- ...categories + category_businesses for the new customer, same pattern as seed.sql
+```
+
+## 5. Get Your Connection String
 
 1. Project Settings → Database → Connection string → **URI**
 2. Use the **Session pooler** string for serverless/Railway deployments (handles connection limits better than a direct connection)
@@ -59,10 +108,8 @@ from businesses b where b.name = 'Your Business Name';
 
 ## Data Model Notes
 
-- **Categories are global, businesses opt in.** A category row (e.g. "Bank Fees") exists once; `category_businesses` links it to whichever businesses use it. This avoids duplicate category rows across businesses that share categories.
-- **Every account belongs to exactly one business.** The categorizer uses this to scope tier-2 keyword matching to only that business's categories — no more guessing which business an account belongs to.
 - **`accounts.excluded`** replaces the old `EXCLUDED_ACCOUNT_IDS` env var. Set it directly on the account row instead of maintaining a separate ID list.
-- **RLS is enabled with no policies** on every table. The backend connects via the direct Postgres URL (or `service_role` key), both of which bypass RLS — this just ensures the public `anon`/`authenticated` API keys can never touch this data.
+- **RLS is enabled with no policies** on every table. The backend connects via the direct Postgres URL, which bypasses RLS — tenant isolation is enforced by every application query filtering on `customer_id` (see `backend/src/clients/db_client.py`), not by RLS. RLS here only ensures the public `anon`/`authenticated` Supabase API keys can never touch this data.
 
 ## Re-running Migrations
 

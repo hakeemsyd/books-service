@@ -5,16 +5,34 @@
 create extension if not exists "pgcrypto";  -- gen_random_uuid()
 
 -- ---------------------------------------------------------------------------
--- businesses: separate entities that share this books-service (e.g. different
--- companies whose transactions get categorized against their own category set)
+-- customers: tenants of this service. Each customer is a distinct client —
+-- typically one Slack workspace — that manages one or more businesses.
+-- Every other table is scoped back to a customer, directly or transitively,
+-- so one customer's data can never leak into another's.
+-- ---------------------------------------------------------------------------
+create table if not exists customers (
+    id uuid primary key default gen_random_uuid(),
+    name text not null,
+    slack_team_id text,  -- Slack workspace Team ID, e.g. "T0123456" (see supabase/README.md)
+    created_at timestamptz not null default now()
+);
+
+create unique index if not exists idx_customers_name on customers (lower(name));
+create unique index if not exists idx_customers_slack_team on customers (slack_team_id) where slack_team_id is not null;
+
+-- ---------------------------------------------------------------------------
+-- businesses: separate entities under a customer (e.g. different companies
+-- that customer tracks books for, each with its own accounts/categories)
 -- ---------------------------------------------------------------------------
 create table if not exists businesses (
     id uuid primary key default gen_random_uuid(),
+    customer_id uuid not null references customers(id) on delete cascade,
     name text not null,
     created_at timestamptz not null default now()
 );
 
-create unique index if not exists idx_businesses_name on businesses (lower(name));
+create index if not exists idx_businesses_customer on businesses(customer_id);
+create unique index if not exists idx_businesses_customer_name on businesses (customer_id, lower(name));
 
 -- ---------------------------------------------------------------------------
 -- accounts: bank/credit accounts (synced in from Plaid/Fintable or entered
@@ -32,16 +50,19 @@ create index if not exists idx_accounts_business on accounts(business_id);
 create unique index if not exists idx_accounts_business_name on accounts (business_id, lower(name));
 
 -- ---------------------------------------------------------------------------
--- categories: bookkeeping categories. A category can be shared across
--- multiple businesses via category_businesses.
+-- categories: bookkeeping categories, scoped to a customer (not shared across
+-- tenants). A category can still be shared across that customer's own
+-- businesses via category_businesses.
 -- ---------------------------------------------------------------------------
 create table if not exists categories (
     id uuid primary key default gen_random_uuid(),
+    customer_id uuid not null references customers(id) on delete cascade,
     name text not null,
     created_at timestamptz not null default now()
 );
 
-create unique index if not exists idx_categories_name on categories (lower(name));
+create index if not exists idx_categories_customer on categories(customer_id);
+create unique index if not exists idx_categories_customer_name on categories (customer_id, lower(name));
 
 create table if not exists category_businesses (
     category_id uuid not null references categories(id) on delete cascade,
@@ -50,6 +71,30 @@ create table if not exists category_businesses (
 );
 
 create index if not exists idx_category_businesses_business on category_businesses(business_id);
+
+-- Guard rail: a category and business linked together must belong to the
+-- same customer. Without this, a bug elsewhere could quietly link one
+-- customer's category to another customer's business.
+create or replace function check_category_business_same_customer()
+returns trigger as $$
+declare
+    cat_customer uuid;
+    biz_customer uuid;
+begin
+    select customer_id into cat_customer from categories where id = new.category_id;
+    select customer_id into biz_customer from businesses where id = new.business_id;
+    if cat_customer is distinct from biz_customer then
+        raise exception 'category % and business % belong to different customers', new.category_id, new.business_id;
+    end if;
+    return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_category_businesses_same_customer on category_businesses;
+create trigger trg_category_businesses_same_customer
+    before insert or update on category_businesses
+    for each row
+    execute function check_category_business_same_customer();
 
 -- ---------------------------------------------------------------------------
 -- transactions: bank transactions to categorize
@@ -90,10 +135,13 @@ create trigger trg_transactions_updated_at
 -- Row Level Security
 --
 -- The backend connects with the direct Postgres connection string (or the
--- service_role key), both of which bypass RLS entirely. Enabling RLS here
--- with no policies additionally guarantees the anon/authenticated Supabase
--- API keys can never read or write this data, even by accident.
+-- service_role key), both of which bypass RLS entirely — tenant isolation is
+-- enforced in application code (every query is scoped by customer_id), not
+-- by RLS. Enabling RLS here with no policies just guarantees the
+-- anon/authenticated Supabase API keys can never read or write this data,
+-- even by accident.
 -- ---------------------------------------------------------------------------
+alter table customers enable row level security;
 alter table businesses enable row level security;
 alter table accounts enable row level security;
 alter table categories enable row level security;
